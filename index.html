@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <title>Portfolio Monitor</title>
+  <title>Supakfolior</title>
   <style>
     body {
       background-color: #0f1117;
@@ -59,15 +59,60 @@
   font-size: 22px;
   font-weight: bold;
 }
+/* ---- Add Form ---- */
+.add-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.add-form input, .add-form select {
+  background: #1e2130;
+  border: 1px solid #2d3748;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  width: 140px;
+}
+.add-form button {
+  padding: 8px 20px;
+  background: #4299e1;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.add-form button:hover { background: #3182ce; }
+.delete-btn {
+  background: none;
+  border: none;
+  color: #fc8181;
+  cursor: pointer;
+  font-size: 16px;
+}
 
   </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-  <h1>📊 Portfolio ของฉัน</h1>
+  <h1>📊 Supakfolio</h1>
   <p id="last-updated">กำลังโหลด...</p>
   <button id="refresh-btn" onclick="loadPrices()">🔄 Refresh ราคา</button>
+<div class="add-form">
+  <input id="inp-ticker" placeholder="Ticker เช่น GD" />
+  <select id="inp-type">
+    <option>หุ้น US</option>
+    <option>ETF</option>
+    <option>Crypto</option>
+    <option>หุ้นไทย</option>
+  </select>
+  <input id="inp-qty"   placeholder="จำนวน" type="number" />
+  <input id="inp-cost"  placeholder="ราคาทุน (฿)" type="number" />
+  <button onclick="addAsset()">+ เพิ่ม</button>
+</div>
 
 <div class="summary-bar">
   <div class="card">
@@ -93,8 +138,8 @@
         <th>Ticker</th>
         <th>ประเภท</th>
         <th>จำนวน</th>
-        <th>ราคาทุน (USD)</th>
-        <th>ราคาปัจจุบัน (USD)</th>
+       <th>ราคาทุน</th>
+	<th>ราคาปัจจุบัน</th>
         <th>กำไร/ขาดทุน</th>
       </tr>
     </thead>
@@ -113,7 +158,9 @@
       { ticker: "ITA",  type: "ETF",    qty: 15,  costPrice: 130  },
       { ticker: "QQQI", type: "ETF",    qty: 20,  costPrice: 50   },
       { ticker: "BTC",  type: "Crypto", qty: 0.5, costPrice: 60000 },
-    ];
+  // --- หุ้นไทย ---
+{ ticker: "PTT.BK",  type: "หุ้นไทย", qty: 1000, costPrice: 35 },
+];
 
     // ============================================
     // ดึงราคาหุ้น US / ETF จาก Yahoo Finance
@@ -121,11 +168,29 @@
     const FINNHUB_KEY = "d8l3c5hr01qut1f8ovc0d8l3c5hr01qut1f8ovcg";
 
 async function fetchStockPrice(ticker) {
-  const res = await fetch(
-    `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
-  );
-  const data = await res.json();
-  return data.c;
+  if (ticker.endsWith(".BK")) {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    const proxies = [
+      `https://api.allorigins.win/raw?url=` + encodeURIComponent(url),
+      `https://api.codetabs.com/v1/proxy?quest=` + encodeURIComponent(url),
+    ];
+    for (const proxy of proxies) {
+      try {
+        const res = await fetch(proxy);
+        const data = await res.json();
+        const price = data.chart.result[0].meta.regularMarketPrice;
+        if (price) return price;
+      } catch (e) { continue; }
+    }
+    throw new Error("ดึงหุ้นไทยไม่ได้");
+  } else {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
+    );
+    const data = await res.json();
+    if (!data.c || data.c === 0) throw new Error("ไม่พบราคา");
+    return data.c;
+  }
 }
 
     // ============================================
@@ -136,153 +201,179 @@ async function fetchStockPrice(ticker) {
         "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
       );
       const data = await res.json();
-      return data.bitcoin.usd;
+      return data.bitcoin.usd;	
     }
+
+	async function fetchUSDTHB() {
+  const res = await fetch(
+    "https://api.frankfurter.app/latest?from=USD&to=THB"
+  );
+  const data = await res.json();
+  return data.rates.THB;
+}
+function addAsset() {
+  const ticker = document.getElementById("inp-ticker").value.trim().toUpperCase();
+  const type   = document.getElementById("inp-type").value;
+  const qty    = parseFloat(document.getElementById("inp-qty").value);
+  const cost   = parseFloat(document.getElementById("inp-cost").value);
+
+  if (!ticker || isNaN(qty) || isNaN(cost)) {
+    alert("กรุณากรอกข้อมูลให้ครบ");
+    return;
+  }
+
+  portfolio.push({ ticker, type, qty, costPrice: cost });
+
+  // เคลียร์ form
+  document.getElementById("inp-ticker").value = "";
+  document.getElementById("inp-qty").value    = "";
+  document.getElementById("inp-cost").value   = "";
+
+  loadPrices();
+}
+
+function deleteAsset(ticker) {
+  const idx = portfolio.findIndex(p => p.ticker === ticker);
+  if (idx !== -1) portfolio.splice(idx, 1);
+  loadPrices();
+}
 
     // ============================================
     // โหลดราคาทั้งหมดแล้วแสดงในตาราง
     // ============================================
     async function loadPrices() {
-      const tbody = document.getElementById("portfolio-body");
-      tbody.innerHTML = ""; // ล้างตารางก่อน
+  const tbody = document.getElementById("portfolio-body");
+  tbody.innerHTML = "";
 
-      // แสดง loading ก่อน
-      portfolio.forEach(item => {
-        const row = document.createElement("tr");
-        row.id = "row-" + item.ticker;
-        row.innerHTML = `
-          <td><b>${item.ticker}</b></td>
-          <td>${item.type}</td>
-          <td>${item.qty}</td>
-          <td>$${item.costPrice.toLocaleString()}</td>
-          <td class="loading">กำลังโหลด...</td>
-          <td class="loading">-</td>
-        `;
-        tbody.appendChild(row);
-      });
+  // แสดง loading ก่อน
+  portfolio.forEach(item => {
+    const row = document.createElement("tr");
+    row.id = "row-" + item.ticker;
+   row.innerHTML = `
+  <td><b>${item.ticker}</b></td>
+  <td>${item.type}</td>
+  <td>${item.qty}</td>
+  <td class="loading">กำลังโหลด...</td>
+  <td class="loading">กำลังโหลด...</td>
+  <td class="loading">-</td>
+  <td><button class="delete-btn" onclick="deleteAsset('${item.ticker}')">❌</button></td>
+`;
+    tbody.appendChild(row);
+  });
 
-      // ดึงราคาแต่ละตัว
-      for (const item of portfolio) {
-        try {
-          let currentPrice;
+  // ดึง USD/THB ก่อนเลย
+  let usdthb = 33; // fallback ถ้า API ล้มเหลว
+  try {
+    usdthb = await fetchUSDTHB();
+  } catch (e) {}
 
-          if (item.type === "Crypto") {
-            currentPrice = await fetchBTCPrice();
-          } else {
-            currentPrice = await fetchStockPrice(item.ticker);
-          }
+  // ดึงราคาแต่ละตัว
+  for (const item of portfolio) {
+    try {
+      let currentPrice;
+      let costTHB, currentTHB;
 
-          const pnl = (currentPrice - item.costPrice) * item.qty;
-          const pnlPct = ((currentPrice - item.costPrice) / item.costPrice * 100).toFixed(2);
-          const isPositive = pnl >= 0;
-
-          const row = document.getElementById("row-" + item.ticker);
-          row.cells[4].textContent = "$" + currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-          row.cells[4].className = "";
-          row.cells[5].textContent = (isPositive ? "+" : "") + "$" + pnl.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ` (${isPositive ? "+" : ""}${pnlPct}%)`;
-          row.cells[5].className = isPositive ? "positive" : "negative";
-
-        } catch (err) {
-          const row = document.getElementById("row-" + item.ticker);
-          row.cells[4].textContent = "Error";
-          row.cells[5].textContent = "ดึงข้อมูลไม่ได้";
-        }
+      if (item.type === "Crypto") {
+        currentPrice = await fetchBTCPrice();
+        costTHB    = item.costPrice * usdthb;
+        currentTHB = currentPrice * usdthb;
+      } else if (item.type === "หุ้นไทย") {
+        currentPrice = await fetchStockPrice(item.ticker);
+        costTHB    = item.costPrice;      // ต้นทุนเป็นบาทอยู่แล้ว
+        currentTHB = currentPrice;        // ราคาเป็นบาทอยู่แล้ว
+      } else {
+        // หุ้น US + ETF
+        currentPrice = await fetchStockPrice(item.ticker);
+        costTHB    = item.costPrice * usdthb;
+        currentTHB = currentPrice * usdthb;
       }
 
-      // อัปเดตเวลา
-      document.getElementById("last-updated").textContent =
-        "อัปเดตล่าสุด: " + new Date().toLocaleTimeString("th-TH");
-// คำนวณ summary
-let totalCost = 0;
-let totalValue = 0;
+      const pnl    = (currentTHB - costTHB) * item.qty;
+      const pnlPct = ((currentTHB - costTHB) / costTHB * 100).toFixed(2);
+      const isPos  = pnl >= 0;
 
-portfolio.forEach(item => {
-  const row = document.getElementById("row-" + item.ticker);
-  const priceText = row.cells[4].textContent.replace(/[$,]/g, "");
-  const currentPrice = parseFloat(priceText);
-  if (!isNaN(currentPrice)) {
-    totalCost  += item.costPrice * item.qty;
-    totalValue += currentPrice * item.qty;
+      const row = document.getElementById("row-" + item.ticker);
+      row.cells[3].textContent = "฿" + (costTHB).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      row.cells[3].className = "";
+      row.cells[4].textContent = "฿" + (currentTHB).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      row.cells[4].className = "";
+      row.cells[5].textContent = (isPos ? "+" : "") + "฿" + pnl.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ` (${isPos ? "+" : ""}${pnlPct}%)`;
+      row.cells[5].className = isPos ? "positive" : "negative";
+
+    } catch (err) {
+      const row = document.getElementById("row-" + item.ticker);
+      row.cells[4].textContent = "Error";
+      row.cells[5].textContent = "ดึงข้อมูลไม่ได้";
+    }
   }
-});
 
-const totalPnl = totalValue - totalCost;
-const totalPct = (totalPnl / totalCost * 100).toFixed(2);
-const isPos = totalPnl >= 0;
+  // Summary
+  let totalCost = 0, totalValue = 0;
+  portfolio.forEach(item => {
+    const row = document.getElementById("row-" + item.ticker);
+    const costText  = row.cells[3].textContent.replace(/[฿,]/g, "");
+    const valueText = row.cells[4].textContent.replace(/[฿,]/g, "");
+    const cost  = parseFloat(costText) * item.qty;
+    const value = parseFloat(valueText) * item.qty;
+    if (!isNaN(cost))  totalCost  += cost;
+    if (!isNaN(value)) totalValue += value;
+  });
 
-document.getElementById("total-cost").textContent =
-  "$" + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2});
-document.getElementById("total-value").textContent =
-  "$" + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2});
-document.getElementById("total-pnl").textContent =
-  (isPos ? "+" : "") + "$" + totalPnl.toLocaleString(undefined, {minimumFractionDigits: 2}) + ` (${isPos ? "+" : ""}${totalPct}%)`;
-document.getElementById("total-pnl").className =
-  "value " + (isPos ? "positive" : "negative");
+  const totalPnl = totalValue - totalCost;
+  const totalPct = (totalPnl / totalCost * 100).toFixed(2);
+  const isPos    = totalPnl >= 0;
 
-// ---- วาด Pie Chart ----
-const labels = [];
-const values = [];
-const colors = [
-  "#00d4aa", "#4299e1", "#f6ad55",
-  "#fc8181", "#b794f4", "#68d391"
-];
+  document.getElementById("total-cost").textContent =
+    "฿" + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2});
+  document.getElementById("total-value").textContent =
+    "฿" + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2});
+  document.getElementById("total-pnl").textContent =
+    (isPos ? "+" : "") + "฿" + totalPnl.toLocaleString(undefined, {minimumFractionDigits: 2}) + ` (${isPos ? "+" : ""}${totalPct}%)`;
+  document.getElementById("total-pnl").className = "value " + (isPos ? "positive" : "negative");
 
-portfolio.forEach(item => {
-  const row = document.getElementById("row-" + item.ticker);
-  const priceText = row.cells[4].textContent.replace(/[$,]/g, "");
-  const currentPrice = parseFloat(priceText);
-  if (!isNaN(currentPrice)) {
-    labels.push(item.ticker);
-    values.push((currentPrice * item.qty).toFixed(2));
-  }
-});
+  // Pie Chart
+  const labels = [], values = [], colors = [
+    "#00d4aa","#4299e1","#f6ad55","#fc8181","#b794f4","#68d391","#f687b3","#76e4f7"
+  ];
+  portfolio.forEach(item => {
+    const row = document.getElementById("row-" + item.ticker);
+    const valueText = row.cells[4].textContent.replace(/[฿,]/g, "");
+    const val = parseFloat(valueText) * item.qty;
+    if (!isNaN(val)) { labels.push(item.ticker); values.push(val.toFixed(2)); }
+  });
 
-// ถ้ามี chart เก่าอยู่ ให้ destroy ก่อน
-if (window.portfolioChart) {
-  window.portfolioChart.destroy();
+  if (window.portfolioChart) window.portfolioChart.destroy();
+  const ctx = document.getElementById("pieChart").getContext("2d");
+  window.portfolioChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: colors, borderColor: "#0f1117", borderWidth: 3 }]
+    },
+    options: {
+      plugins: {
+        legend: { position: "bottom", labels: { color: "#ffffff", padding: 16, font: { size: 13 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a, b) => +a + +b, 0);
+              const pct = ((ctx.raw / total) * 100).toFixed(1);
+              return ` ฿${parseFloat(ctx.raw).toLocaleString()} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  document.getElementById("last-updated").textContent =
+    "อัปเดตล่าสุด: " + new Date().toLocaleTimeString("th-TH") + ` (USD/THB = ฿${usdthb.toFixed(2)})`;
 }
-
-const ctx = document.getElementById("pieChart").getContext("2d");
-window.portfolioChart = new Chart(ctx, {
-  type: "doughnut",
-  data: {
-    labels: labels,
-    datasets: [{
-      data: values,
-      backgroundColor: colors,
-      borderColor: "#0f1117",
-      borderWidth: 3,
-    }]
-  },
-  options: {
-    plugins: {
-      legend: {
-        position: "bottom",
-        labels: {
-          color: "#ffffff",
-          padding: 16,
-          font: { size: 13 }
-        }
-      },
-      tooltip: {
-        callbacks: {
-          label: (ctx) => {
-            const total = ctx.dataset.data.reduce((a, b) => +a + +b, 0);
-            const pct = ((ctx.raw / total) * 100).toFixed(1);
-            return ` $${parseFloat(ctx.raw).toLocaleString()} (${pct}%)`;
-          }
-        }
-      }
-    }
-  }
-});
-
-    }
 
     // โหลดอัตโนมัติตอนเปิดหน้า
     loadPrices();
-// Auto-refresh ทุก 60 วินาที
-setInterval(loadPrices, 60000);
+    // Auto-refresh ทุก 60 วินาที
+    setInterval(loadPrices, 60000);
   </script>
 
 </body>
